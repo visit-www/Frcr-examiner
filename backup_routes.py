@@ -154,6 +154,40 @@ def download_backup():
         return jsonify({'error': f'Backup failed: {str(e)}'}), 500
 
 
+@backup_bp.route('/status', methods=['GET'])
+@login_required
+def backup_status():
+    """Check backup status and whether user is admin"""
+    try:
+        is_admin = check_admin()
+        
+        # Get last backup time from session
+        last_backup_time = session.get('last_backup_time')
+        hours_since_backup = None
+        needs_backup = False
+        
+        if is_admin and last_backup_time:
+            try:
+                last_backup_dt = datetime.fromisoformat(last_backup_time)
+                hours_since_backup = (datetime.utcnow() - last_backup_dt).total_seconds() / 3600
+                # Recommend backup if more than 7 days
+                needs_backup = hours_since_backup > (7 * 24)
+            except:
+                needs_backup = True
+        elif is_admin:
+            # No backup ever done
+            needs_backup = True
+        
+        return jsonify({
+            'is_admin': is_admin,
+            'last_backup_time': last_backup_time,
+            'hours_since_backup': hours_since_backup,
+            'needs_backup': needs_backup
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @backup_bp.route('/restore', methods=['POST'])
 @login_required
 def restore_backup():
