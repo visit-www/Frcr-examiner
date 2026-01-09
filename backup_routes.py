@@ -188,12 +188,15 @@ def backup_status():
         'stats': stats
     })
 
+
+@backup_bp.route('/restore', methods=['POST'])
+@login_required
+def restore_backup():
+    """Restore database from uploaded JSON backup"""
+    if not check_admin():
         return jsonify({'error': 'Admin access required'}), 403
     
     if 'backup_file' not in request.files:
-        return jsonify({'error': 'No backup file provided'}), 400
-    
-    file = request.files['backup_file']
     
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
