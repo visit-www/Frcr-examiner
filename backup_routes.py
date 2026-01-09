@@ -197,6 +197,9 @@ def restore_backup():
         return jsonify({'error': 'Admin access required'}), 403
     
     if 'backup_file' not in request.files:
+        return jsonify({'error': 'No backup file provided'}), 400
+    
+    file = request.files['backup_file']
     
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
