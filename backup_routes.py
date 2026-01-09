@@ -369,37 +369,3 @@ def restore_backup():
         db.session.rollback()
         return jsonify({'error': f'Restore failed: {str(e)}'}), 500
 
-
-@backup_bp.route('/status', methods=['GET'])
-@login_required
-def backup_status():
-    """Get backup status and reminder info"""
-    if not check_admin():
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    last_backup = session.get('last_backup_time')
-    
-    if last_backup:
-        last_backup_dt = datetime.fromisoformat(last_backup)
-        hours_since = (datetime.utcnow() - last_backup_dt).total_seconds() / 3600
-        needs_backup = hours_since >= 24
-    else:
-        needs_backup = True
-        hours_since = None
-    
-    # Count records
-    stats = {
-        'total_sessions': ExamSession.query.count(),
-        'total_packets': Packet.query.count(),
-        'total_cases': Case.query.count(),
-        'total_candidates': Candidate.query.count(),
-        'total_images': CaseImage.query.count()
-    }
-    
-    return jsonify({
-        'is_admin': True,
-        'last_backup_time': last_backup,
-        'hours_since_backup': hours_since,
-        'needs_backup': needs_backup,
-        'stats': stats
-    })
