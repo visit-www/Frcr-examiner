@@ -82,6 +82,17 @@ if DATABASE_URL:
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
             'poolclass': NullPool,  # No connection pooling for serverless
             'pool_pre_ping': True,  # Verify connections before using
+            'connect_args': {
+                'connect_timeout': 10,  # Connection timeout in seconds
+                'keepalives': 1,
+                'keepalives_idle': 30,
+                'keepalives_interval': 10,
+                'keepalives_count': 5
+            }
+        }
+    else:
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_pre_ping': True,  # Verify connections before using
         }
 else:
     # SQLite for local development
@@ -109,6 +120,27 @@ print(f"[SESSION] SECURE={app.config['SESSION_COOKIE_SECURE']}, HTTPONLY={app.co
 
 # Initialize database
 db.init_app(app)
+
+# Add request lifecycle handlers for proper connection management in serverless
+@app.before_request
+def before_request():
+    """Ensure database connection is clean before each request"""
+    try:
+        # Verify database connection is alive (ping test)
+        if DATABASE_URL:  # Only for PostgreSQL
+            db.session.execute('SELECT 1')
+    except Exception as e:
+        print(f"[DB] Connection test failed: {e}")
+        # Dispose of all connections and create fresh ones
+        db.engine.dispose()
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    """Properly close database session after each request"""
+    try:
+        db.session.remove()
+    except Exception as e:
+        print(f"[DB] Error during session cleanup: {e}")
 
 # Initialize Flask-Login
 login_manager = LoginManager()
