@@ -391,15 +391,21 @@
         escaped = escaped.replace(/\n/g, '<br>');
         
         // Now allow specific safe HTML tags to be rendered
+        // Using 's' flag to allow . to match newlines in multiline content
         const tagMappings = [
-            { pattern: /&lt;b&gt;(.*?)&lt;\/b&gt;/g, replacement: '<strong>$1</strong>' },
-            { pattern: /&lt;strong&gt;(.*?)&lt;\/strong&gt;/g, replacement: '<strong>$1</strong>' },
-            { pattern: /&lt;i&gt;(.*?)&lt;\/i&gt;/g, replacement: '<em>$1</em>' },
-            { pattern: /&lt;em&gt;(.*?)&lt;\/em&gt;/g, replacement: '<em>$1</em>' },
-            { pattern: /&lt;u&gt;(.*?)&lt;\/u&gt;/g, replacement: '<u>$1</u>' },
-            { pattern: /&lt;p&gt;(.*?)&lt;\/p&gt;/g, replacement: '<p>$1</p>' },
+            { pattern: /&lt;b&gt;(.*?)&lt;\/b&gt;/gs, replacement: '<strong>$1</strong>' },
+            { pattern: /&lt;strong&gt;(.*?)&lt;\/strong&gt;/gs, replacement: '<strong>$1</strong>' },
+            { pattern: /&lt;i&gt;(.*?)&lt;\/i&gt;/gs, replacement: '<em>$1</em>' },
+            { pattern: /&lt;em&gt;(.*?)&lt;\/em&gt;/gs, replacement: '<em>$1</em>' },
+            { pattern: /&lt;u&gt;(.*?)&lt;\/u&gt;/gs, replacement: '<u>$1</u>' },
+            { pattern: /&lt;mark&gt;(.*?)&lt;\/mark&gt;/gs, replacement: '<mark style="background-color: #FFFF00; padding: 2px 4px;">$1</mark>' },
+            { pattern: /&lt;code&gt;(.*?)&lt;\/code&gt;/gs, replacement: '<code style="background-color: #f5f5f5; padding: 2px 4px; border-radius: 3px; font-family: monospace;">$1</code>' },
+            { pattern: /&lt;sub&gt;(.*?)&lt;\/sub&gt;/gs, replacement: '<sub>$1</sub>' },
+            { pattern: /&lt;sup&gt;(.*?)&lt;\/sup&gt;/gs, replacement: '<sup>$1</sup>' },
+            { pattern: /&lt;p&gt;(.*?)&lt;\/p&gt;/gs, replacement: '<p>$1</p>' },
             { pattern: /&lt;br\s*\/?&gt;/g, replacement: '<br>' },
             { pattern: /&lt;hr\s*\/?&gt;/g, replacement: '<hr>' },
+            { pattern: /&lt;blockquote&gt;(.*?)&lt;\/blockquote&gt;/gs, replacement: '<blockquote style="border-left: 4px solid #ccc; padding-left: 12px; margin-left: 0; color: #666;">$1</blockquote>' },
         ];
         
         tagMappings.forEach(map => {
