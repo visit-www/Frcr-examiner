@@ -61,7 +61,7 @@
                     <div class="detail-section discussion-section mb-5 p-4 rounded-3" style="background: linear-gradient(135deg, #f0f8fc 0%, #f5fbff 100%); border-left: 5px solid #17a2b8;">
                         <label class="detail-label fw-bold text-secondary mb-3 d-block"><i class="fas fa-comments-dollar me-2" style="color: #17a2b8;"></i>Discussion & Comments</label>
                         <div id="discussionText" class="detail-content discussion-text" style="line-height: 1.8; color: #2c3e50; text-align: left;">
-                            {% if case.discussion %}{{ case.discussion|safe }}{% else %}<em class="text-muted"><i class="fas fa-info-circle me-2"></i>No discussion provided.</em>{% endif %}
+                            {% if case.discussion %}<span id="rawDiscussionText" class="d-none">{{ case.discussion }}</span><em class="text-muted" id="discussionLoader"><i class="fas fa-spinner fa-spin me-2"></i>Loading discussion...</em>{% else %}<em class="text-muted"><i class="fas fa-info-circle me-2"></i>No discussion provided.</em>{% endif %}
                         </div>
                     </div>
 
@@ -367,29 +367,103 @@
         setupKeyboardNavigation();
     });
     
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    // Parse user text: interpret basic HTML and handle line breaks
+    function parseUserText(text) {
+        if (!text) return '';
+        
+        // First, escape HTML to prevent XSS
+        let escaped = escapeHtml(text);
+        
+        // Convert line breaks to <br> tags
+        escaped = escaped.replace(/\n/g, '<br>');
+        
+        // Now allow specific safe HTML tags to be rendered
+        const tagMappings = [
+            { pattern: /&lt;b&gt;(.*?)&lt;\/b&gt;/g, replacement: '<strong>$1</strong>' },
+            { pattern: /&lt;strong&gt;(.*?)&lt;\/strong&gt;/g, replacement: '<strong>$1</strong>' },
+            { pattern: /&lt;i&gt;(.*?)&lt;\/i&gt;/g, replacement: '<em>$1</em>' },
+            { pattern: /&lt;em&gt;(.*?)&lt;\/em&gt;/g, replacement: '<em>$1</em>' },
+            { pattern: /&lt;u&gt;(.*?)&lt;\/u&gt;/g, replacement: '<u>$1</u>' },
+            { pattern: /&lt;p&gt;(.*?)&lt;\/p&gt;/g, replacement: '<p>$1</p>' },
+            { pattern: /&lt;br\s*\/?&gt;/g, replacement: '<br>' },
+            { pattern: /&lt;hr\s*\/?&gt;/g, replacement: '<hr>' },
+        ];
+        
+        tagMappings.forEach(map => {
+            escaped = escaped.replace(map.pattern, map.replacement);
+        });
+        
+        return escaped;
+    }
+    
     // Convert URLs in discussion to clickable links and support basic HTML
     function linkifyDiscussion() {
         const discussionDiv = document.getElementById('discussionText');
         if (!discussionDiv) return;
         
-        let text = discussionDiv.innerHTML;
+        // Check if raw discussion text exists
+        const rawTextElement = document.getElementById('rawDiscussionText');
+        const loader = document.getElementById('discussionLoader');
         
-        // Skip if already processed (has linkified URLs) or is empty state
-        if (text.includes('target="_blank"') || text.includes('No discussion provided')) return;
-        
-        // URL regex pattern
-        const urlPattern = /(https?:\/\/[^\s<]+)/g;
-        
-        // Replace URLs with clickable links
-        text = text.replace(urlPattern, function(url) {
-            // Remove trailing punctuation
-            let cleanUrl = url.replace(/[.,;:!?)]+$/, '');
-            let punctuation = url.substring(cleanUrl.length);
+        if (rawTextElement) {
+            // Parse the raw text with line breaks and basic HTML
+            const rawText = rawTextElement.textContent;
+            let text = parseUserText(rawText);
             
-            return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: #17a2b8; text-decoration: underline; font-weight: 500;">${cleanUrl}</a>${punctuation}`;
-        });
-        
-        discussionDiv.innerHTML = text;
+            // URL regex pattern - but only for unlinked URLs
+            const urlPattern = /(https?:\/\/[^\s<"]+)/g;
+            
+            // Replace URLs with clickable links (only if not already in HTML tag)
+            text = text.replace(urlPattern, function(url) {
+                // Check if URL is already in an href attribute
+                if (url.includes('href=')) return url;
+                
+                // Remove trailing punctuation
+                let cleanUrl = url.replace(/[.,;:!?)]+$/, '');
+                let punctuation = url.substring(cleanUrl.length);
+                
+                return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: #17a2b8; text-decoration: underline; font-weight: 500;">${cleanUrl}</a>${punctuation}`;
+            });
+            
+            discussionDiv.innerHTML = text;
+            
+            // Remove loader if it exists
+            if (loader) loader.remove();
+            if (rawTextElement) rawTextElement.remove();
+        } else {
+            // Fallback: handle already rendered content with just URL linkification
+            let text = discussionDiv.innerHTML;
+            
+            // Skip if already processed (has linkified URLs) or is empty state
+            if (text.includes('target="_blank"') || text.includes('No discussion provided')) return;
+            
+            // URL regex pattern
+            const urlPattern = /(https?:\/\/[^\s<]+)/g;
+            
+            // Replace URLs with clickable links
+            text = text.replace(urlPattern, function(url) {
+                // Remove trailing punctuation
+                let cleanUrl = url.replace(/[.,;:!?)]+$/, '');
+                let punctuation = url.substring(cleanUrl.length);
+                
+                return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="color: #17a2b8; text-decoration: underline; font-weight: 500;">${cleanUrl}</a>${punctuation}`;
+            });
+            
+            discussionDiv.innerHTML = text;
+        }
     }
     
     // Load Q&A pairs from API
@@ -421,11 +495,15 @@
                                 </thead>
                                 <tbody role="rowgroup">
                                     ${pairs.map((pair, index) => {
-                                        let questionText = (pair.question.text || '').trim().replace(/\n/g, '<br>');
-                                        let answerText = (pair.answer.text || '').trim().replace(/\n/g, '<br>');
+                                        let questionText = (pair.question.text || '').trim();
+                                        let answerText = (pair.answer.text || '').trim();
                                         
                                         questionText = questionText.replace(/^Question\s+\d+:\s*/i, '');
                                         answerText = answerText.replace(/^Answer\s+\d+:\s*/i, '');
+                                        
+                                        // Parse text with line breaks and basic HTML
+                                        questionText = parseUserText(questionText);
+                                        answerText = parseUserText(answerText);
                                         
                                         const rowClass = index % 2 === 0 ? 'qa-row-even' : 'qa-row-odd';
                                         
@@ -456,11 +534,15 @@
                 const mobileHtml = `
                     <div class="qa-cards-container d-md-none">
                         ${pairs.map((pair, index) => {
-                            let questionText = (pair.question.text || '').trim().replace(/\n/g, '<br>');
-                            let answerText = (pair.answer.text || '').trim().replace(/\n/g, '<br>');
+                            let questionText = (pair.question.text || '').trim();
+                            let answerText = (pair.answer.text || '').trim();
                             
                             questionText = questionText.replace(/^Question\s+\d+:\s*/i, '');
                             answerText = answerText.replace(/^Answer\s+\d+:\s*/i, '');
+                            
+                            // Parse text with line breaks and basic HTML
+                            questionText = parseUserText(questionText);
+                            answerText = parseUserText(answerText);
                             
                             return `
                             <div class="qa-cards-row mb-4">

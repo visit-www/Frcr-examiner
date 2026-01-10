@@ -292,6 +292,36 @@ function escapeHtml(text) {
     return text.replace(/[&<>"']/g, m => map[m]);
 }
 
+// Parse user text: interpret basic HTML and handle line breaks
+function parseUserText(text) {
+    if (!text) return '';
+    
+    // First, escape HTML to prevent XSS
+    let escaped = escapeHtml(text);
+    
+    // Convert line breaks to <br> tags
+    escaped = escaped.replace(/\n/g, '<br>');
+    
+    // Now allow specific safe HTML tags to be rendered
+    // This regex pattern finds our escaped tags and converts them back
+    const tagMappings = [
+        { pattern: /&lt;b&gt;(.*?)&lt;\/b&gt;/g, replacement: '<strong>$1</strong>' },
+        { pattern: /&lt;strong&gt;(.*?)&lt;\/strong&gt;/g, replacement: '<strong>$1</strong>' },
+        { pattern: /&lt;i&gt;(.*?)&lt;\/i&gt;/g, replacement: '<em>$1</em>' },
+        { pattern: /&lt;em&gt;(.*?)&lt;\/em&gt;/g, replacement: '<em>$1</em>' },
+        { pattern: /&lt;u&gt;(.*?)&lt;\/u&gt;/g, replacement: '<u>$1</u>' },
+        { pattern: /&lt;p&gt;(.*?)&lt;\/p&gt;/g, replacement: '<p>$1</p>' },
+        { pattern: /&lt;br\s*\/?&gt;/g, replacement: '<br>' },
+        { pattern: /&lt;hr\s*\/?&gt;/g, replacement: '<hr>' },
+    ];
+    
+    tagMappings.forEach(map => {
+        escaped = escaped.replace(map.pattern, map.replacement);
+    });
+    
+    return escaped;
+}
+
 // Upload image with validation
 function uploadImage() {
     const input = document.getElementById('editImageInput');
@@ -315,7 +345,14 @@ function uploadImage() {
         return;
     }
     
-    const caseId = document.getElementById('editCaseId').value;
+    const caseIdField = document.getElementById('editCaseId').value;
+    
+    // Check if this is a new case that hasn't been saved yet
+    if (caseIdField.startsWith('new-')) {
+        alert('Please save the case first before uploading images. Click "Save All Changes" to create the case.');
+        return;
+    }
+    
     const formData = new FormData();
     formData.append('image', file);
     
@@ -325,7 +362,7 @@ function uploadImage() {
     uploadBtn.disabled = true;
     uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Uploading...';
     
-    fetch(`/api/case/${caseId}/image`, {
+    fetch(`/api/case/${caseIdField}/image`, {
         method: 'POST',
         body: formData
     })
@@ -333,7 +370,7 @@ function uploadImage() {
     .then(data => {
         if (data.image_id || data.success) {
             input.value = '';
-            reloadImages(caseId);
+            reloadImages(caseIdField);
         } else {
             alert('Error: ' + (data.error || 'Upload failed'));
         }
