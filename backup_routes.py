@@ -101,16 +101,42 @@ def download_backup():
         
         # Export case images (base64 encoded)
         import base64
+        image_count = 0
+        total_image_size = 0
         for image in CaseImage.query.all():
-            backup_data['case_images'].append({
-                'id': image.id,
-                'case_id': image.case_id,
-                'image_data': base64.b64encode(image.image_data).decode('utf-8'),
-                'image_filename': image.image_filename,
-                'image_type': image.image_type,
-                'image_description': image.image_description,
-                'created_at': image.created_at.isoformat() if image.created_at else None
-            })
+            try:
+                # Verify image data exists and is not None
+                if image.image_data is None:
+                    print(f"Warning: Image {image.id} has no data, skipping...")
+                    continue
+                
+                # Encode image data to base64
+                image_base64 = base64.b64encode(image.image_data).decode('utf-8')
+                image_size_bytes = len(image.image_data)
+                total_image_size += image_size_bytes
+                
+                backup_data['case_images'].append({
+                    'id': image.id,
+                    'case_id': image.case_id,
+                    'image_data': image_base64,
+                    'image_filename': image.image_filename,
+                    'image_type': image.image_type,
+                    'image_description': image.image_description or '',
+                    'image_size_bytes': image_size_bytes,  # Add size for verification
+                    'created_at': image.created_at.isoformat() if image.created_at else None
+                })
+                image_count += 1
+            except Exception as img_error:
+                print(f"Error exporting image {image.id}: {str(img_error)}")
+                # Continue with other images even if one fails
+                continue
+        
+        # Add image export statistics to metadata
+        backup_data['metadata']['image_export_stats'] = {
+            'total_images_exported': image_count,
+            'total_image_size_bytes': total_image_size,
+            'total_image_size_mb': round(total_image_size / (1024 * 1024), 2)
+        }
         
         # Export questions
         for question in Question.query.all():
@@ -133,8 +159,19 @@ def download_backup():
             })
         
         # Create JSON file in memory
-        json_data = json.dumps(backup_data, indent=2)
-        json_bytes = io.BytesIO(json_data.encode('utf-8'))
+        # Use ensure_ascii=False to handle any special characters in filenames/descriptions
+        try:
+            json_data = json.dumps(backup_data, indent=2, ensure_ascii=False)
+            json_bytes = io.BytesIO(json_data.encode('utf-8'))
+            
+            # Log backup statistics
+            backup_size_mb = len(json_data.encode('utf-8')) / (1024 * 1024)
+            print(f"Backup created: {len(backup_data.get('case_images', []))} images, {backup_size_mb:.2f} MB total")
+        except Exception as json_error:
+            print(f"Error creating JSON backup: {str(json_error)}")
+            # Try with ASCII encoding as fallback
+            json_data = json.dumps(backup_data, indent=2, ensure_ascii=True)
+            json_bytes = io.BytesIO(json_data.encode('utf-8'))
         
         # Generate filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -151,7 +188,86 @@ def download_backup():
         )
         
     except Exception as e:
-        return jsonify({'error': f'Backup failed: {str(e)}'}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Backup error: {error_details}")
+        return jsonify({
+            'error': f'Backup failed: {str(e)}',
+            'details': error_details
+        }), 500
+
+
+@backup_bp.route('/verify', methods=['POST'])
+@login_required
+def verify_backup():
+    """Verify a backup file contains all expected data including images"""
+    if not check_admin():
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    if 'backup_file' not in request.files:
+        return jsonify({'error': 'No backup file provided'}), 400
+    
+    file = request.files['backup_file']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not file.filename.endswith('.json'):
+        return jsonify({'error': 'Only JSON backup files are supported'}), 400
+    
+    try:
+        # Read and parse JSON
+        backup_data = json.loads(file.read().decode('utf-8'))
+        
+        # Verify backup structure
+        if 'metadata' not in backup_data:
+            return jsonify({'error': 'Invalid backup file format'}), 400
+        
+        # Count items in backup
+        verification = {
+            'exam_sessions': len(backup_data.get('exam_sessions', [])),
+            'packets': len(backup_data.get('packets', [])),
+            'cases': len(backup_data.get('cases', [])),
+            'candidates': len(backup_data.get('candidates', [])),
+            'images': len(backup_data.get('case_images', [])),
+            'questions': len(backup_data.get('questions', [])),
+            'answers': len(backup_data.get('answers', []))
+        }
+        
+        # Verify images have data
+        images_with_data = 0
+        images_without_data = 0
+        total_image_size = 0
+        
+        for img in backup_data.get('case_images', []):
+            if img.get('image_data') and len(img.get('image_data', '')) > 0:
+                images_with_data += 1
+                # Estimate size (base64 is ~33% larger than binary)
+                total_image_size += len(img.get('image_data', '')) * 3 // 4
+            else:
+                images_without_data += 1
+        
+        verification['images_with_data'] = images_with_data
+        verification['images_without_data'] = images_without_data
+        verification['total_image_size_mb'] = round(total_image_size / (1024 * 1024), 2)
+        
+        # Check metadata for image stats
+        if 'image_export_stats' in backup_data.get('metadata', {}):
+            verification['export_stats'] = backup_data['metadata']['image_export_stats']
+        
+        return jsonify({
+            'valid': True,
+            'verification': verification,
+            'message': 'Backup file verified successfully'
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'valid': False,
+            'error': f'Verification failed: {str(e)}',
+            'details': traceback.format_exc()
+        }), 500
 
 
 @backup_bp.route('/status', methods=['GET'])
@@ -286,16 +402,36 @@ def restore_backup():
         
         # Restore case images
         import base64
+        restored_image_count = 0
         for image_data in backup_data.get('case_images', []):
-            image = CaseImage(
-                id=image_data['id'],
-                case_id=image_data['case_id'],
-                image_data=base64.b64decode(image_data['image_data']),
-                image_filename=image_data['image_filename'],
-                image_type=image_data['image_type'],
-                image_description=image_data.get('image_description', '')
-            )
-            db.session.add(image)
+            try:
+                # Verify required fields exist
+                if 'image_data' not in image_data or not image_data['image_data']:
+                    print(f"Warning: Image {image_data.get('id', 'unknown')} has no image_data, skipping...")
+                    continue
+                
+                # Decode base64 image data
+                decoded_image_data = base64.b64decode(image_data['image_data'])
+                
+                # Verify decoded data is not empty
+                if len(decoded_image_data) == 0:
+                    print(f"Warning: Image {image_data.get('id', 'unknown')} decoded to empty data, skipping...")
+                    continue
+                
+                image = CaseImage(
+                    id=image_data['id'],
+                    case_id=image_data['case_id'],
+                    image_data=decoded_image_data,
+                    image_filename=image_data['image_filename'],
+                    image_type=image_data['image_type'],
+                    image_description=image_data.get('image_description', '')
+                )
+                db.session.add(image)
+                restored_image_count += 1
+            except Exception as img_error:
+                print(f"Error restoring image {image_data.get('id', 'unknown')}: {str(img_error)}")
+                # Continue with other images even if one fails
+                continue
         
         db.session.flush()
         
@@ -351,6 +487,9 @@ def restore_backup():
             except Exception as e:
                 pass
         
+        # Count actually restored images
+        actual_restored_images = CaseImage.query.count()
+        
         return jsonify({
             'success': True,
             'message': 'Database restored successfully',
@@ -359,7 +498,8 @@ def restore_backup():
                 'packets': len(backup_data.get('packets', [])),
                 'cases': len(backup_data.get('cases', [])),
                 'candidates': len(backup_data.get('candidates', [])),
-                'images': len(backup_data.get('case_images', [])),
+                'images_in_backup': len(backup_data.get('case_images', [])),
+                'images_restored': actual_restored_images,
                 'questions': len(backup_data.get('questions', [])),
                 'answers': len(backup_data.get('answers', []))
             }
