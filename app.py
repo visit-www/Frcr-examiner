@@ -1224,6 +1224,20 @@ def migrate_db():
                 else:
                     db.engine.execute(text('ALTER TABLE case_image ADD COLUMN cloudinary_public_id VARCHAR(255)'))
                 print("[ADMIN] Added cloudinary_public_id column to case_image")
+            
+            # Make image_data nullable (for Cloudinary-only storage)
+            try:
+                if 'sqlite' in db_url.lower():
+                    # SQLite doesn't support ALTER COLUMN, skip for now
+                    # The migration script handles this
+                    pass
+                else:
+                    # PostgreSQL - make image_data nullable
+                    db.engine.execute(text("ALTER TABLE case_image ALTER COLUMN image_data DROP NOT NULL"))
+                    print("[ADMIN] Made image_data nullable in case_image")
+            except Exception as nullable_error:
+                # Column might already be nullable or SQLite
+                print(f"[ADMIN] image_data nullable note: {nullable_error}")
         except Exception as col_error:
             # Column might already exist, that's okay
             print(f"[ADMIN] CaseImage column migration note: {col_error}")
