@@ -324,12 +324,37 @@ def restore_backup():
         return jsonify({'error': 'Only JSON backup files are supported'}), 400
     
     try:
-        # Read and parse JSON
-        backup_data = json.loads(file.read().decode('utf-8'))
+        # Read file content
+        file_content = file.read()
+        
+        # Try to decode with UTF-8, fallback to other encodings if needed
+        try:
+            file_text = file_content.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                file_text = file_content.decode('utf-8-sig')  # Handle BOM
+            except UnicodeDecodeError:
+                try:
+                    file_text = file_content.decode('latin-1')  # Fallback encoding
+                except Exception as decode_error:
+                    return jsonify({
+                        'error': f'Failed to decode file: {str(decode_error)}. Please ensure the file is valid UTF-8 encoded JSON.'
+                    }), 400
+        
+        # Parse JSON with better error handling
+        try:
+            backup_data = json.loads(file_text)
+        except json.JSONDecodeError as json_error:
+            return jsonify({
+                'error': f'Invalid JSON format: {str(json_error)}. Please ensure the file is a valid JSON backup file.',
+                'details': f'Error at line {json_error.lineno}, column {json_error.colno}'
+            }), 400
         
         # Validate backup structure
         if 'metadata' not in backup_data:
-            return jsonify({'error': 'Invalid backup file format'}), 400
+            return jsonify({
+                'error': 'Invalid backup file format: missing metadata. Please ensure this is a backup file exported from this application.'
+            }), 400
         
         # Clear existing data (DANGEROUS - make sure user confirms)
         if not request.form.get('confirm_overwrite'):
@@ -505,7 +530,24 @@ def restore_backup():
             }
         })
         
+    except json.JSONDecodeError as json_error:
+        db.session.rollback()
+        return jsonify({
+            'error': f'JSON parsing failed: {str(json_error)}',
+            'details': f'Error at line {json_error.lineno}, column {json_error.colno}. Please check that the file is valid JSON.'
+        }), 400
+    except UnicodeDecodeError as decode_error:
+        db.session.rollback()
+        return jsonify({
+            'error': f'File encoding error: {str(decode_error)}. Please ensure the backup file is UTF-8 encoded.'
+        }), 400
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Restore failed: {str(e)}'}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Restore error: {error_details}")
+        return jsonify({
+            'error': f'Restore failed: {str(e)}',
+            'details': error_details if os.getenv('FLASK_ENV') == 'development' else None
+        }), 500
 
