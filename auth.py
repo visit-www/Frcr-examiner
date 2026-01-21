@@ -261,12 +261,116 @@ def profile():
             'id': current_user.id,
             'email': current_user.email,
             'full_name': current_user.full_name,
+            'profile_pic_url': current_user.get_profile_pic_url(),
             'created_at': current_user.created_at.isoformat(),
             'last_login': current_user.last_login.isoformat() if current_user.last_login else None
         }), 200
     
     # Return HTML profile page
     return render_template('profile.html', user=current_user)
+
+
+@auth_bp.route('/profile/picture', methods=['POST'])
+@login_required
+def upload_profile_picture():
+    """Upload profile picture to Cloudinary"""
+    if 'profile_pic' not in request.files:
+        return jsonify({'error': 'No image file provided'}), 400
+    
+    file = request.files['profile_pic']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    # Check file size (max 5MB for profile pics)
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+    
+    if file_size > 5 * 1024 * 1024:  # 5MB
+        return jsonify({'error': 'File size exceeds 5MB limit'}), 400
+    
+    # Check file type
+    import mimetypes
+    allowed_types = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+    file_type = mimetypes.guess_type(file.filename)[0]
+    
+    if file_type not in allowed_types:
+        return jsonify({'error': 'Only image files (JPEG, PNG, GIF, WebP) are allowed'}), 400
+    
+    try:
+        import cloudinary
+        import cloudinary.uploader
+        
+        # Delete old profile picture from Cloudinary if exists
+        if current_user.profile_pic_public_id:
+            try:
+                cloudinary.uploader.destroy(current_user.profile_pic_public_id)
+                print(f"[CLOUDINARY] Deleted old profile pic: {current_user.profile_pic_public_id}")
+            except Exception as e:
+                print(f"[CLOUDINARY] Error deleting old profile pic: {e}")
+        
+        # Upload to Cloudinary in frcr-examiner-media/profile-pics subfolder
+        upload_result = cloudinary.uploader.upload(
+            file,
+            folder="frcr-examiner-media/profile-pics",  # Organized under parent folder frcr-examiner-media
+            resource_type="image",
+            overwrite=False,
+            use_filename=True,
+            unique_filename=True
+        )
+        
+        cloudinary_url = upload_result.get('secure_url')
+        cloudinary_public_id = upload_result.get('public_id')
+        
+        print(f"[CLOUDINARY] Profile pic uploaded: {cloudinary_public_id} -> {cloudinary_url}")
+        
+        # Update user profile picture
+        current_user.profile_pic_url = cloudinary_url
+        current_user.profile_pic_public_id = cloudinary_public_id
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'profile_pic_url': cloudinary_url,
+            'message': 'Profile picture uploaded successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"[PROFILE] Error uploading profile picture: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Upload error: {str(e)}'}), 500
+
+
+@auth_bp.route('/profile/picture', methods=['DELETE'])
+@login_required
+def delete_profile_picture():
+    """Delete profile picture from Cloudinary"""
+    try:
+        import cloudinary
+        import cloudinary.uploader
+        
+        # Delete from Cloudinary if public_id exists
+        if current_user.profile_pic_public_id:
+            try:
+                cloudinary.uploader.destroy(current_user.profile_pic_public_id)
+                print(f"[CLOUDINARY] Deleted profile pic: {current_user.profile_pic_public_id}")
+            except Exception as e:
+                print(f"[CLOUDINARY] Error deleting profile pic: {e}")
+        
+        # Clear from database
+        current_user.profile_pic_url = None
+        current_user.profile_pic_public_id = None
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Profile picture deleted successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Delete error: {str(e)}'}), 500
 
 
 @auth_bp.route('/test-email', methods=['GET'])
