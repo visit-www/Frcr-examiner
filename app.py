@@ -33,9 +33,8 @@ except Exception as e:
     instance_path = '/tmp'
 
 # Configuration
-# Use PostgreSQL on production (Vercel), SQLite locally
-# Vercel Supabase integration uses DATABASE_POSTGRES_URL_NON_POOLING for direct connection
-# Priority: Use non-pooling URL first for serverless environments
+# Use PostgreSQL on production (Vercel with Neon), SQLite locally
+# Priority: Use non-pooling URL first for serverless environments, then DATABASE_URL
 DATABASE_URL = os.getenv('DATABASE_POSTGRES_URL_NON_POOLING') or os.getenv('DATABASE_URL') or os.getenv('DATABASE_POSTGRES_URL')
 
 if DATABASE_URL:
@@ -44,8 +43,8 @@ if DATABASE_URL:
     # Handle both postgres:// and postgresql:// schemes
     db_uri = DATABASE_URL.replace('postgres://', 'postgresql://')
     
-    # Remove unsupported query parameters (pgbouncer, supa, etc.) that cause psycopg2 errors
-    # These are often added by Supabase but not recognized by psycopg2
+    # Remove unsupported query parameters that cause psycopg2 errors
+    # Some providers add parameters that aren't recognized by psycopg2
     from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
     
     try:
@@ -53,7 +52,7 @@ if DATABASE_URL:
         if parsed.query:
             # Parse query parameters
             params = parse_qs(parsed.query, keep_blank_values=True)
-            # Remove unsupported parameters
+            # Remove unsupported parameters (keep sslmode as it's standard)
             unsupported_params = ['supa', 'pgbouncer', 'supabase']
             for param in unsupported_params:
                 params.pop(param, None)
@@ -69,7 +68,8 @@ if DATABASE_URL:
                 new_query,
                 parsed.fragment
             ))
-            print(f"[DB] Cleaned query parameters from connection string")
+            if new_query != parsed.query:
+                print(f"[DB] Cleaned unsupported query parameters from connection string")
     except Exception as e:
         print(f"[DB] Warning: Could not parse URL parameters: {e}")
     

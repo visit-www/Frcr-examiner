@@ -47,7 +47,7 @@ A comprehensive web application for managing FRCR (Fellowship of the Royal Colle
 ## 🛠️ Technology Stack
 
 - **Backend**: Flask 2.3.3, Python 3.9+
-- **Database**: PostgreSQL (Supabase) for production, SQLite for local development
+- **Database**: PostgreSQL (Neon) for production, SQLite for local development
 - **ORM**: SQLAlchemy 2.0.45, Flask-SQLAlchemy 3.0.5
 - **Authentication**: Flask-Login 0.6.2, Werkzeug password hashing
 - **Frontend**: Bootstrap 5, vanilla JavaScript
@@ -127,7 +127,7 @@ A comprehensive web application for managing FRCR (Fellowship of the Royal Colle
 2. **Connect to Vercel**
    - Import your GitHub repository in Vercel dashboard
    - Configure environment variables:
-     - `DATABASE_URL`: PostgreSQL connection string (Supabase recommended)
+     - `DATABASE_URL`: PostgreSQL connection string (Neon recommended)
      - `SECRET_KEY`: Strong random key for session encryption
      - `PYTHON_VERSION`: 3.9
 
@@ -137,12 +137,19 @@ A comprehensive web application for managing FRCR (Fellowship of the Royal Colle
 
 ### Database Setup (Production)
 
-The application uses Supabase PostgreSQL for production:
+The application uses **Neon** (serverless Postgres) for production:
 
-1. Create a Supabase project at [supabase.com](https://supabase.com)
-2. Get your PostgreSQL connection string
+1. Create a Neon project at [neon.tech](https://neon.tech)
+2. Get your PostgreSQL connection string (use pooler endpoint for serverless)
 3. Add to Vercel environment variables as `DATABASE_URL`
 4. Database tables are created automatically on first run
+
+**Connection String Format:**
+```
+postgresql://user:password@host/database?sslmode=require
+```
+
+See [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for detailed deployment instructions.
 
 ## 🔐 Authentication & Security
 
