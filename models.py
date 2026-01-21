@@ -14,6 +14,10 @@ class User(UserMixin, db.Model):
     full_name = db.Column(db.String(120), nullable=False)
     is_active = db.Column(db.Boolean, default=True)
     
+    # Profile picture (Cloudinary)
+    profile_pic_url = db.Column(db.String(500), nullable=True)  # Cloudinary URL for profile picture
+    profile_pic_public_id = db.Column(db.String(255), nullable=True)  # Cloudinary public_id for deletion
+    
     # Password recovery
     recovery_token = db.Column(db.String(255), unique=True, nullable=True)
     recovery_token_expires = db.Column(db.DateTime, nullable=True)
@@ -24,6 +28,13 @@ class User(UserMixin, db.Model):
     
     # Relationships
     exam_sessions = db.relationship('ExamSession', backref='creator', lazy=True, cascade='all, delete-orphan')
+    
+    def get_profile_pic_url(self):
+        """Get profile picture URL - returns Cloudinary URL or default avatar"""
+        if self.profile_pic_url:
+            return self.profile_pic_url
+        # Return default avatar or None
+        return None
     
     def set_password(self, password):
         """Hash and set password"""

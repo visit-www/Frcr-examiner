@@ -114,7 +114,8 @@ cloudinary.config(
     api_secret=os.getenv('CLOUDINARY_API_SECRET', 'vjxPaLX00tmYRNOFOJ_Di6e3VYM'),
     secure=True
 )
-print("[CLOUDINARY] Configured for project: frcr-examiner (separate from frcr-revision)")
+print("[CLOUDINARY] Configured - Base folder: frcr-examiner-media")
+print("[CLOUDINARY] Subfolders: case-images, profile-pics")
 
 # Session configuration
 # Check if SECRET_KEY is set
@@ -771,10 +772,10 @@ def upload_case_image(case_id):
     description = request.form.get('description', '')
     
     try:
-        # Upload to Cloudinary in frcr-examiner folder
+        # Upload to Cloudinary in frcr-examiner-media/case-images subfolder
         upload_result = cloudinary.uploader.upload(
             file,
-            folder="frcr-examiner",  # Store in frcr-examiner folder, separate from frcr-revision
+            folder="frcr-examiner-media/case-images",  # Organized under parent folder frcr-examiner-media
             resource_type="image",
             overwrite=False,
             use_filename=True,
