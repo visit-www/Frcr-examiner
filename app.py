@@ -581,12 +581,16 @@ def get_case(case_id):
     
     # Handle GET request
     if request.method == 'GET':
+        # Get questions and answers ordered by number
+        questions = Question.query.filter_by(case_id=case_id).order_by(Question.question_number).all()
+        answers = Answer.query.filter_by(case_id=case_id).order_by(Answer.answer_number).all()
+        
         return jsonify({
             'id': case.id,
             'case_number': case.case_number,
             'diagnosis': case.diagnosis,
-            'questions': [{'question_text': q.question_text, 'id': q.id} for q in case.question_items],
-            'answers': [{'answer_text': a.answer_text, 'id': a.id} for a in case.answer_items],
+            'questions': [{'question_text': q.question_text, 'id': q.id} for q in questions],
+            'answers': [{'answer_text': a.answer_text, 'id': a.id} for a in answers],
             'discussion': case.discussion
         })
     

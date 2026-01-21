@@ -270,17 +270,37 @@ function initializeNewCase(packetId) {
 // Load case data for editing
 function loadCaseForEdit(caseId) {
     Promise.all([
-        fetch(`/api/case/${caseId}`).then(r => r.json()),
-        fetch(`/api/case/${caseId}/images`).then(r => r.json())
+        fetch(`/api/case/${caseId}`)
+            .then(async r => {
+                if (!r.ok) {
+                    const errorText = await r.text();
+                    throw new Error(`Failed to load case: ${r.status} ${errorText}`);
+                }
+                return r.json();
+            }),
+        fetch(`/api/case/${caseId}/images`)
+            .then(async r => {
+                if (!r.ok) {
+                    // If images fail, return empty array instead of failing completely
+                    console.warn('Failed to load images:', r.status);
+                    return [];
+                }
+                return r.json();
+            })
     ])
     .then(([caseData, images]) => {
+        // Check if caseData has error
+        if (caseData.error) {
+            throw new Error(caseData.error);
+        }
+        
         // Set the case ID
         document.getElementById('editCaseId').value = caseData.id;
         
         // Update page subtitle
         const subtitle = document.getElementById('pageSubtitle');
         if (subtitle) {
-            subtitle.textContent = `Case #${caseData.case_number} - ${caseData.diagnosis}`;
+            subtitle.textContent = `Case #${caseData.case_number || 'N/A'} - ${caseData.diagnosis || 'No diagnosis'}`;
         }
         
         // Populate form fields
@@ -296,7 +316,7 @@ function loadCaseForEdit(caseId) {
     })
     .catch(error => {
         console.error('Error loading case:', error);
-        alert('Error loading case data');
+        alert(`Error loading case data: ${error.message}\n\nPlease make sure you are logged in and have permission to edit this case.`);
         window.history.back();
     });
 }
