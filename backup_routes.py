@@ -310,7 +310,10 @@ def backup_status():
 def restore_backup():
     """Restore database from uploaded JSON backup"""
     if not check_admin():
-        return jsonify({'error': 'Admin access required'}), 403
+        return jsonify({
+            'error': 'Admin access required. Only the first registered user (admin) can restore backups.',
+            'code': 'ADMIN_REQUIRED'
+        }), 403
     
     if 'backup_file' not in request.files:
         return jsonify({'error': 'No backup file provided'}), 400

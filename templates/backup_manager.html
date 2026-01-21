@@ -311,10 +311,20 @@ async function restoreBackup(event) {
             body: formData
         });
         
-        const data = await response.json();
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        let data;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            // If not JSON, read as text for error message
+            const text = await response.text();
+            throw new Error(`Server error (${response.status}): ${text || response.statusText}`);
+        }
         
         if (!response.ok) {
-            throw new Error(data.error || 'Restore failed');
+            throw new Error(data.error || `Restore failed: ${response.statusText}`);
         }
         
         statusDiv.innerHTML = `
@@ -345,10 +355,19 @@ async function restoreBackup(event) {
         
     } catch (error) {
         console.error('Restore error:', error);
+        let errorMessage = error.message;
+        
+        // Handle specific error cases
+        if (errorMessage.includes('403') || errorMessage.includes('Admin access required')) {
+            errorMessage = 'Admin access required. Please ensure you are logged in as the first registered user (admin).';
+        } else if (errorMessage.includes('string did not match')) {
+            errorMessage = 'Server returned an invalid response. Please try again or contact support.';
+        }
+        
         statusDiv.innerHTML = `
             <div class="alert alert-danger">
-                <i class="fas fa-times-circle"></i> Restore failed: ${error.message}
-                <br><small>Please check that you selected a valid backup file.</small>
+                <i class="fas fa-times-circle"></i> Restore failed: ${errorMessage}
+                <br><small>Please check that you selected a valid backup file and have admin access.</small>
             </div>
         `;
     }
