@@ -1202,6 +1202,32 @@ def migrate_db():
             # Column might already exist, that's okay
             print(f"[ADMIN] Column migration note: {col_error}")
         
+        # Add missing columns for CaseImage table (Cloudinary support)
+        try:
+            from sqlalchemy import text, inspect
+            
+            inspector = inspect(db.engine)
+            case_image_columns = [col['name'] for col in inspector.get_columns('case_image')]
+            
+            db_url = str(db.engine.url)
+            
+            if 'cloudinary_url' not in case_image_columns:
+                if 'sqlite' in db_url.lower():
+                    db.engine.execute(text("ALTER TABLE case_image ADD COLUMN cloudinary_url VARCHAR(500)"))
+                else:
+                    db.engine.execute(text('ALTER TABLE case_image ADD COLUMN cloudinary_url VARCHAR(500)'))
+                print("[ADMIN] Added cloudinary_url column to case_image")
+            
+            if 'cloudinary_public_id' not in case_image_columns:
+                if 'sqlite' in db_url.lower():
+                    db.engine.execute(text("ALTER TABLE case_image ADD COLUMN cloudinary_public_id VARCHAR(255)"))
+                else:
+                    db.engine.execute(text('ALTER TABLE case_image ADD COLUMN cloudinary_public_id VARCHAR(255)'))
+                print("[ADMIN] Added cloudinary_public_id column to case_image")
+        except Exception as col_error:
+            # Column might already exist, that's okay
+            print(f"[ADMIN] CaseImage column migration note: {col_error}")
+        
         print("[ADMIN] Database migration complete")
         return jsonify({'success': True, 'message': 'Database tables and columns updated'}), 200
     except Exception as e:
