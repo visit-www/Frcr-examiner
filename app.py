@@ -101,6 +101,8 @@ else:
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(instance_path, "frcr_examiner.db")}'
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Increase max upload size for backup files (default is 16MB, allow up to 50MB)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 
 # Session configuration
 # Check if SECRET_KEY is set
