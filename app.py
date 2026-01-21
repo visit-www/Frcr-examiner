@@ -10,6 +10,9 @@ from sqlalchemy import text
 import os
 from io import BytesIO
 import mimetypes
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 
 app = Flask(__name__, 
     template_folder=os.path.join(os.path.dirname(__file__), 'templates'),
@@ -103,6 +106,15 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-pr
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Increase max upload size for backup files (default is 16MB, allow up to 50MB)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
+
+# Configure Cloudinary for image storage
+cloudinary.config(
+    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME', 'dx7b7chvn'),
+    api_key=os.getenv('CLOUDINARY_API_KEY', '498826983224188'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET', 'vjxPaLX00tmYRNOFOJ_Di6e3VYM'),
+    secure=True
+)
+print("[CLOUDINARY] Configured for project: frcr-examiner (separate from frcr-revision)")
 
 # Session configuration
 # Check if SECRET_KEY is set
@@ -753,14 +765,32 @@ def upload_case_image(case_id):
         return jsonify({'error': 'Only image files (JPEG, PNG, GIF, WebP) are allowed'}), 400
     
     image_data = file.read()
+    file.seek(0)  # Reset file pointer for Cloudinary upload
     
     # Get description from form data
     description = request.form.get('description', '')
     
     try:
+        # Upload to Cloudinary in frcr-examiner folder
+        upload_result = cloudinary.uploader.upload(
+            file,
+            folder="frcr-examiner",  # Store in frcr-examiner folder, separate from frcr-revision
+            resource_type="image",
+            overwrite=False,
+            use_filename=True,
+            unique_filename=True
+        )
+        
+        cloudinary_url = upload_result.get('secure_url')
+        cloudinary_public_id = upload_result.get('public_id')
+        
+        print(f"[CLOUDINARY] Image uploaded: {cloudinary_public_id} -> {cloudinary_url}")
+        
+        # Save to database with Cloudinary URL (no binary data)
         case_image = CaseImage(
             case_id=case_id,
-            image_data=image_data,
+            cloudinary_url=cloudinary_url,
+            cloudinary_public_id=cloudinary_public_id,
             image_filename=file.filename,
             image_type=file_type,
             image_description=description
@@ -772,14 +802,15 @@ def upload_case_image(case_id):
         return jsonify({
             'image_id': case_image.id,
             'filename': case_image.image_filename,
-            'message': 'Image uploaded successfully'
+            'url': cloudinary_url,
+            'message': 'Image uploaded successfully to Cloudinary'
         })
     except Exception as e:
         db.session.rollback()
-        print(f"[IMAGE] Error uploading image: {str(e)}")
+        print(f"[IMAGE] Error uploading image to Cloudinary: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': f'Database error: {str(e)}'}), 500
+        return jsonify({'error': f'Upload error: {str(e)}'}), 500
 
 
 @app.route('/api/case/<int:case_id>/images')
@@ -794,6 +825,7 @@ def get_case_images(case_id):
     return jsonify([{
         'id': img.id,
         'filename': img.image_filename,
+        'url': img.get_image_url(),  # Returns Cloudinary URL or legacy endpoint
         'description': img.image_description if img.image_description else '',
         'created_at': img.created_at.strftime('%Y-%m-%d %H:%M:%S')
     } for img in images])
@@ -802,18 +834,26 @@ def get_case_images(case_id):
 @app.route('/api/case-image/<int:image_id>')
 @login_required
 def get_case_image(image_id):
-    """Retrieve a case image by ID"""
+    """Retrieve a case image by ID - redirects to Cloudinary or serves legacy binary"""
     image = CaseImage.query.get(image_id)
     
     if not image:
         return jsonify({'error': 'Image not found'}), 404
     
-    return send_file(
-        BytesIO(image.image_data),
-        mimetype=image.image_type,
-        as_attachment=False,
-        download_name=image.image_filename
-    )
+    # If Cloudinary URL exists, redirect to it
+    if image.cloudinary_url:
+        return redirect(image.cloudinary_url)
+    
+    # Legacy: serve binary data if no Cloudinary URL
+    if image.image_data:
+        return send_file(
+            BytesIO(image.image_data),
+            mimetype=image.image_type,
+            as_attachment=False,
+            download_name=image.image_filename
+        )
+    
+    return jsonify({'error': 'Image data not available'}), 404
 
 
 @app.route('/api/case-image/<int:image_id>', methods=['DELETE'])
@@ -828,11 +868,20 @@ def delete_case_image(image_id):
     if not case:
         return jsonify({"error": "Unauthorized"}), 403
     
-    """Delete a case image"""
+    """Delete a case image - also deletes from Cloudinary if applicable"""
     image = CaseImage.query.get(image_id)
     
     if not image:
         return jsonify({'error': 'Image not found'}), 404
+    
+    # Delete from Cloudinary if public_id exists
+    if image.cloudinary_public_id:
+        try:
+            cloudinary.uploader.destroy(image.cloudinary_public_id)
+            print(f"[CLOUDINARY] Deleted image: {image.cloudinary_public_id}")
+        except Exception as e:
+            print(f"[CLOUDINARY] Error deleting image: {e}")
+            # Continue with database deletion even if Cloudinary deletion fails
     
     db.session.delete(image)
     db.session.commit()

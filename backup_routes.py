@@ -99,41 +99,51 @@ def download_backup():
                 'packet_number': candidate.packet_number
             })
         
-        # Export case images (base64 encoded)
+        # Export case images - prefer Cloudinary URLs, fallback to base64 for legacy
         import base64
         image_count = 0
+        cloudinary_count = 0
+        legacy_count = 0
         total_image_size = 0
         for image in CaseImage.query.all():
             try:
-                # Verify image data exists and is not None
-                if image.image_data is None:
-                    print(f"Warning: Image {image.id} has no data, skipping...")
-                    continue
-                
-                # Encode image data to base64
-                image_base64 = base64.b64encode(image.image_data).decode('utf-8')
-                image_size_bytes = len(image.image_data)
-                total_image_size += image_size_bytes
-                
-                backup_data['case_images'].append({
+                image_data = {
                     'id': image.id,
                     'case_id': image.case_id,
-                    'image_data': image_base64,
                     'image_filename': image.image_filename,
                     'image_type': image.image_type,
                     'image_description': image.image_description or '',
-                    'image_size_bytes': image_size_bytes,  # Add size for verification
                     'created_at': image.created_at.isoformat() if image.created_at else None
-                })
+                }
+                
+                # Prefer Cloudinary URL (much smaller backup files)
+                if image.cloudinary_url:
+                    image_data['cloudinary_url'] = image.cloudinary_url
+                    image_data['cloudinary_public_id'] = image.cloudinary_public_id
+                    cloudinary_count += 1
+                # Legacy: base64 encode if no Cloudinary URL
+                elif image.image_data:
+                    image_base64 = base64.b64encode(image.image_data).decode('utf-8')
+                    image_size_bytes = len(image.image_data)
+                    total_image_size += image_size_bytes
+                    image_data['image_data'] = image_base64
+                    image_data['image_size_bytes'] = image_size_bytes
+                    legacy_count += 1
+                else:
+                    print(f"Warning: Image {image.id} has no data (neither Cloudinary nor binary), skipping...")
+                    continue
+                
+                backup_data['case_images'].append(image_data)
                 image_count += 1
             except Exception as img_error:
                 print(f"Error exporting image {image.id}: {str(img_error)}")
-                # Continue with other images even if one fails
                 continue
         
         # Add image export statistics to metadata
         backup_data['metadata']['image_export_stats'] = {
             'total_images_exported': image_count,
+            'cloudinary_images': cloudinary_count,
+            'legacy_base64_images': legacy_count,
             'total_image_size_bytes': total_image_size,
             'total_image_size_mb': round(total_image_size / (1024 * 1024), 2)
         }
@@ -428,37 +438,49 @@ def restore_backup():
         
         db.session.flush()
         
-        # Restore case images
+        # Restore case images - handle both Cloudinary URLs and legacy base64
         import base64
         restored_image_count = 0
+        cloudinary_restored = 0
+        legacy_restored = 0
         for image_data in backup_data.get('case_images', []):
             try:
-                # Verify required fields exist
-                if 'image_data' not in image_data or not image_data['image_data']:
-                    print(f"Warning: Image {image_data.get('id', 'unknown')} has no image_data, skipping...")
+                # Prefer Cloudinary URL (no binary data needed)
+                if image_data.get('cloudinary_url'):
+                    image = CaseImage(
+                        id=image_data['id'],
+                        case_id=image_data['case_id'],
+                        cloudinary_url=image_data['cloudinary_url'],
+                        cloudinary_public_id=image_data.get('cloudinary_public_id'),
+                        image_filename=image_data['image_filename'],
+                        image_type=image_data['image_type'],
+                        image_description=image_data.get('image_description', '')
+                    )
+                    cloudinary_restored += 1
+                # Legacy: decode base64 if no Cloudinary URL
+                elif image_data.get('image_data'):
+                    decoded_image_data = base64.b64decode(image_data['image_data'])
+                    if len(decoded_image_data) == 0:
+                        print(f"Warning: Image {image_data.get('id', 'unknown')} decoded to empty data, skipping...")
+                        continue
+                    
+                    image = CaseImage(
+                        id=image_data['id'],
+                        case_id=image_data['case_id'],
+                        image_data=decoded_image_data,
+                        image_filename=image_data['image_filename'],
+                        image_type=image_data['image_type'],
+                        image_description=image_data.get('image_description', '')
+                    )
+                    legacy_restored += 1
+                else:
+                    print(f"Warning: Image {image_data.get('id', 'unknown')} has no data (neither Cloudinary nor base64), skipping...")
                     continue
                 
-                # Decode base64 image data
-                decoded_image_data = base64.b64decode(image_data['image_data'])
-                
-                # Verify decoded data is not empty
-                if len(decoded_image_data) == 0:
-                    print(f"Warning: Image {image_data.get('id', 'unknown')} decoded to empty data, skipping...")
-                    continue
-                
-                image = CaseImage(
-                    id=image_data['id'],
-                    case_id=image_data['case_id'],
-                    image_data=decoded_image_data,
-                    image_filename=image_data['image_filename'],
-                    image_type=image_data['image_type'],
-                    image_description=image_data.get('image_description', '')
-                )
                 db.session.add(image)
                 restored_image_count += 1
             except Exception as img_error:
                 print(f"Error restoring image {image_data.get('id', 'unknown')}: {str(img_error)}")
-                # Continue with other images even if one fails
                 continue
         
         db.session.flush()

@@ -131,14 +131,23 @@ class Answer(db.Model):
 
 
 class CaseImage(db.Model):
-    """Store images for a case"""
+    """Store images for a case - using Cloudinary for storage"""
     id = db.Column(db.Integer, primary_key=True)
     case_id = db.Column(db.Integer, db.ForeignKey('case.id'), nullable=False)
-    image_data = db.Column(db.LargeBinary, nullable=False)  # Binary image data
+    image_data = db.Column(db.LargeBinary, nullable=True)  # Legacy: kept for backward compatibility, but deprecated
+    cloudinary_url = db.Column(db.String(500), nullable=True)  # Cloudinary URL for the image
+    cloudinary_public_id = db.Column(db.String(255), nullable=True)  # Cloudinary public_id for deletion
     image_filename = db.Column(db.String(255), nullable=False)
     image_type = db.Column(db.String(50), nullable=False)  # e.g., 'image/png', 'image/jpeg'
     image_description = db.Column(db.Text, default='')  # Optional image description
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def get_image_url(self):
+        """Get the image URL - prefer Cloudinary, fallback to legacy binary"""
+        if self.cloudinary_url:
+            return self.cloudinary_url
+        # Legacy: return endpoint for binary data
+        return f'/api/case-image/{self.id}'
     
     def __repr__(self):
         return f'<CaseImage {self.image_filename} for Case {self.case_id}>'
