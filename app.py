@@ -1176,6 +1176,96 @@ def migrate_db():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/admin/migrate-images', methods=['POST'])
+@login_required
+def migrate_images_to_cloudinary():
+    """Migrate existing binary images to Cloudinary (Admin only)"""
+    # Check if user is admin
+    first_user = User.query.order_by(User.id).first()
+    if not current_user.is_authenticated or not first_user or current_user.id != first_user.id:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        from io import BytesIO
+        
+        # Find all images with binary data but no Cloudinary URL
+        images_to_migrate = CaseImage.query.filter(
+            CaseImage.image_data.isnot(None),
+            (CaseImage.cloudinary_url.is_(None) | (CaseImage.cloudinary_url == ''))
+        ).all()
+        
+        total_images = len(images_to_migrate)
+        
+        if total_images == 0:
+            return jsonify({
+                'success': True,
+                'message': 'No images to migrate. All images are already in Cloudinary!',
+                'migrated': 0,
+                'failed': 0
+            })
+        
+        successful = 0
+        failed = 0
+        errors = []
+        
+        for image in images_to_migrate:
+            try:
+                if not image.image_data or len(image.image_data) == 0:
+                    failed += 1
+                    errors.append(f"Image {image.id}: No binary data")
+                    continue
+                
+                # Create BytesIO from binary data
+                image_file = BytesIO(image.image_data)
+                image_file.seek(0)
+                
+                # Upload to Cloudinary
+                upload_result = cloudinary.uploader.upload(
+                    image_file,
+                    folder="frcr-examiner-media/case-images",
+                    resource_type="image",
+                    overwrite=False,
+                    use_filename=True,
+                    unique_filename=True,
+                    filename_override=image.image_filename
+                )
+                
+                cloudinary_url = upload_result.get('secure_url')
+                cloudinary_public_id = upload_result.get('public_id')
+                
+                # Update database
+                image.cloudinary_url = cloudinary_url
+                image.cloudinary_public_id = cloudinary_public_id
+                # Keep binary data for now (can be cleared later)
+                
+                db.session.commit()
+                successful += 1
+                
+            except Exception as e:
+                db.session.rollback()
+                failed += 1
+                errors.append(f"Image {image.id}: {str(e)}")
+                continue
+        
+        return jsonify({
+            'success': True,
+            'message': f'Migration complete: {successful} successful, {failed} failed',
+            'total': total_images,
+            'migrated': successful,
+            'failed': failed,
+            'errors': errors[:10] if errors else []  # Return first 10 errors
+        })
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[MIGRATION] Error: {error_details}")
+        return jsonify({
+            'error': f'Migration failed: {str(e)}',
+            'details': error_details if os.getenv('FLASK_ENV') == 'development' else None
+        }), 500
+
+
 if __name__ == '__main__':
     if sys.platform == 'darwin':
         show_macos_gatekeeper_popup()
