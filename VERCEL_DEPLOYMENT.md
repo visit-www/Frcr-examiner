@@ -28,6 +28,7 @@ Set these in your Vercel project settings:
    - Go to [vercel.com](https://vercel.com)
    - Import your GitHub repository
    - Vercel will auto-detect Python/Flask
+   - **Important**: Vercel automatically installs dependencies from `requirements.txt` - no build command needed
 
 2. **Set Environment Variables**
    - Go to Project Settings → Environment Variables
@@ -39,6 +40,7 @@ Set these in your Vercel project settings:
    - Push to your main branch
    - Vercel will automatically deploy
    - Or trigger manual deployment from dashboard
+   - Vercel will automatically install Python dependencies
 
 ### Database Connection
 
