@@ -44,7 +44,7 @@ def make_image_data_nullable():
                     # SQLite workaround: Create new table with nullable image_data
                     print("  📝 Creating new table structure...")
                     
-                    # Create new table
+                    # Create new table (note: 'case' is a reserved word in SQLite, so we quote it)
                     conn.execute(text("""
                         CREATE TABLE case_image_new (
                             id INTEGER PRIMARY KEY,
@@ -56,7 +56,7 @@ def make_image_data_nullable():
                             image_type VARCHAR(50) NOT NULL,
                             image_description TEXT,
                             created_at DATETIME,
-                            FOREIGN KEY (case_id) REFERENCES case(id)
+                            FOREIGN KEY (case_id) REFERENCES "case"(id)
                         )
                     """))
                     
