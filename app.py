@@ -1165,14 +1165,45 @@ def update_case_qa_pairs(case_id):
 
 @app.route('/api/admin/migrate-db', methods=['POST'])
 def migrate_db():
-    """Create database tables if they don't exist"""
+    """Create database tables if they don't exist and add missing columns"""
     try:
         print("[ADMIN] Running database migration...")
+        
+        # Create all tables
         db.create_all()
+        
+        # Add missing columns for User table (profile picture support)
+        try:
+            from sqlalchemy import text, inspect
+            
+            inspector = inspect(db.engine)
+            columns = [col['name'] for col in inspector.get_columns('user')]
+            
+            db_url = str(db.engine.url)
+            
+            if 'profile_pic_url' not in columns:
+                if 'sqlite' in db_url.lower():
+                    db.engine.execute(text("ALTER TABLE user ADD COLUMN profile_pic_url VARCHAR(500)"))
+                else:
+                    db.engine.execute(text('ALTER TABLE "user" ADD COLUMN profile_pic_url VARCHAR(500)'))
+                print("[ADMIN] Added profile_pic_url column")
+            
+            if 'profile_pic_public_id' not in columns:
+                if 'sqlite' in db_url.lower():
+                    db.engine.execute(text("ALTER TABLE user ADD COLUMN profile_pic_public_id VARCHAR(255)"))
+                else:
+                    db.engine.execute(text('ALTER TABLE "user" ADD COLUMN profile_pic_public_id VARCHAR(255)'))
+                print("[ADMIN] Added profile_pic_public_id column")
+        except Exception as col_error:
+            # Column might already exist, that's okay
+            print(f"[ADMIN] Column migration note: {col_error}")
+        
         print("[ADMIN] Database migration complete")
-        return jsonify({'success': True, 'message': 'Database tables created'}), 200
+        return jsonify({'success': True, 'message': 'Database tables and columns updated'}), 200
     except Exception as e:
         print(f"[ADMIN] Migration error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
