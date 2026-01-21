@@ -792,8 +792,9 @@ function loadImagesManage(caseId) {
             images.forEach(image => {
                 const div = document.createElement('div');
                 div.className = 'image-thumbnail';
+                const imageUrl = image.url || `/api/case-image/${image.id}`;  // Use Cloudinary URL if available
                 div.innerHTML = `
-                    <img src="/api/case-image/${image.id}" alt="${image.filename}" title="Click to view full size">
+                    <img src="${imageUrl}" alt="${image.filename}" title="Click to view full size">
                     <button class="image-delete" onclick="deleteImageManage(event, ${image.id}, ${caseId})" title="Delete image">×</button>
                 `;
                 div.addEventListener('click', function(e) {
@@ -874,27 +875,36 @@ function viewImageFullSizeManage(imageId, filename) {
         backdrop: 'static',
         keyboard: true
     });
-    document.getElementById('modalImageDisplayManage').src = `/api/case-image/${imageId}`;
-    document.getElementById('imageInfoManage').textContent = `Filename: ${filename}`;
     
-    // Load image description from API
+    // Load image info to get URL (Cloudinary or legacy)
     const caseId = document.querySelector('[data-case-id]')?.dataset.caseId;
     if (caseId) {
         fetch(`/api/case/${caseId}/images`)
             .then(response => response.json())
             .then(images => {
                 const image = images.find(img => img.id == imageId);
+                const imageUrl = image?.url || `/api/case-image/${imageId}`;  // Use Cloudinary URL if available
+                document.getElementById('modalImageDisplayManage').src = imageUrl;
+                document.getElementById('imageInfoManage').textContent = `Filename: ${filename}`;
+                
                 if (image) {
                     document.getElementById('imageDescriptionManage').value = image.description || '';
                 }
+                modal.show();
             })
             .catch(error => {
-                console.error('Error loading image description:', error);
-                document.getElementById('imageDescriptionManage').value = '';
+                console.error('Error loading image:', error);
+                // Fallback to legacy endpoint
+                document.getElementById('modalImageDisplayManage').src = `/api/case-image/${imageId}`;
+                document.getElementById('imageInfoManage').textContent = `Filename: ${filename}`;
+                modal.show();
             });
+    } else {
+        // Fallback if caseId not found
+        document.getElementById('modalImageDisplayManage').src = `/api/case-image/${imageId}`;
+        document.getElementById('imageInfoManage').textContent = `Filename: ${filename}`;
+        modal.show();
     }
-    
-    modal.show();
 }
 
 function saveImageDescriptionManage() {

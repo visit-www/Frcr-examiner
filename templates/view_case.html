@@ -648,8 +648,9 @@
                 images.forEach((image, index) => {
                     const div = document.createElement('div');
                     div.className = 'image-thumbnail';
+                    const imageUrl = image.url || `/api/case-image/${image.id}`;  // Use Cloudinary URL if available
                     div.innerHTML = `
-                        <img src="/api/case-image/${image.id}" alt="${image.filename}" title="Click to view full size">
+                        <img src="${imageUrl}" alt="${image.filename}" title="Click to view full size">
                         <button class="image-delete" onclick="deleteImage(event, ${image.id})" title="Delete image">×</button>
                     `;
                     div.addEventListener('click', function(e) {
@@ -689,37 +690,38 @@
     }
     
     function viewImageFullSize(imageId, filename) {
-        // Display the image
-        document.getElementById('modalImageDisplay').src = `/api/case-image/${imageId}`;
-        
-        // Update counter
-        updateImageCounter();
-        
-        // Update navigation button states
-        updateNavigationButtons();
-        
-        // Load image description from API
+        // Load image info to get URL (Cloudinary or legacy)
         fetch(`/api/case/${caseId}/images`)
             .then(response => response.json())
             .then(images => {
                 const image = images.find(img => img.id == imageId);
-                const descriptionDisplay = document.getElementById('imageDescriptionDisplay');
+                const imageUrl = image?.url || `/api/case-image/${imageId}`;  // Use Cloudinary URL if available
                 
+                // Display the image
+                document.getElementById('modalImageDisplay').src = imageUrl;
+                
+                // Update counter
+                updateImageCounter();
+                
+                // Update navigation button states
+                updateNavigationButtons();
+                
+                const descriptionDisplay = document.getElementById('imageDescriptionDisplay');
                 if (image && image.description && image.description.trim()) {
-                    // Show description if it exists
                     descriptionDisplay.textContent = image.description;
                 } else {
-                    // Show default text if no description
                     descriptionDisplay.textContent = 'No description';
                 }
+                
+                // Show modal
+                imageModal.show();
             })
             .catch(error => {
-                console.error('Error loading image description:', error);
-                document.getElementById('imageDescriptionDisplay').textContent = 'No description';
+                console.error('Error loading image:', error);
+                // Fallback to legacy endpoint
+                document.getElementById('modalImageDisplay').src = `/api/case-image/${imageId}`;
+                imageModal.show();
             });
-        
-        // Show modal
-        imageModal.show();
     }
     
     // Update image counter display
@@ -787,9 +789,10 @@
         }
         
         const image = currentImages[currentImageIndex];
+        const imageUrl = image.url || `/api/case-image/${image.id}`;  // Use Cloudinary URL if available
         
         // Update image display
-        document.getElementById('modalImageDisplay').src = `/api/case-image/${image.id}`;
+        document.getElementById('modalImageDisplay').src = imageUrl;
         
         // Update counter
         updateImageCounter();

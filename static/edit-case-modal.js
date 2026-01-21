@@ -123,9 +123,10 @@ function populateImages(images) {
         col.className = 'col-md-4';
         col.id = `image-card-${image.id}`;
         
+        const imageUrl = image.url || `/api/case-image/${image.id}`;  // Use Cloudinary URL if available
         col.innerHTML = `
             <div class="card image-card h-100 shadow-sm">
-                <img src="/api/case-image/${image.id}" alt="${escapeHtml(image.filename)}" 
+                <img src="${imageUrl}" alt="${escapeHtml(image.filename)}" 
                      class="card-img-top" style="height: 180px; object-fit: cover; cursor: pointer;"
                      onclick="viewImageFull('${image.id}')" title="Click to view full size">
                 <div class="card-body p-3">
