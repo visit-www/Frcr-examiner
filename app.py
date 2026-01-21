@@ -6,6 +6,7 @@ from auth import auth_bp
 from backup_routes import backup_bp
 from datetime import datetime
 from sqlalchemy.pool import NullPool
+from sqlalchemy import text
 import os
 from io import BytesIO
 import mimetypes
@@ -128,7 +129,7 @@ def before_request():
     try:
         # Verify database connection is alive (ping test)
         if DATABASE_URL:  # Only for PostgreSQL
-            db.session.execute('SELECT 1')
+            db.session.execute(text('SELECT 1'))
     except Exception as e:
         print(f"[DB] Connection test failed: {e}")
         # Dispose of all connections and create fresh ones
